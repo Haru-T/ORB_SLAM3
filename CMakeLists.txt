@@ -95,7 +95,9 @@ OpenSSL::Crypto)
 
 find_package(Pangolin QUIET)
 if(Pangolin_FOUND)
-  target_link_libraries(${PROJECT_NAME} Pangolin)
+  target_include_directories(${PROJECT_NAME} PRIVATE ${Pangolin_INCLUDE_DIRS})
+  target_link_directories(${PROJECT_NAME} PRIVATE ${Pangolin_LINK_DIRS})
+  target_link_libraries(${PROJECT_NAME} ${Pangolin_LIBRARIES})
 else()
   include(FetchContent)
   FetchContent_Declare(
