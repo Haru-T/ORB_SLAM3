@@ -176,3 +176,5 @@ g2o/stuff/string_tools.cpp
 g2o/stuff/property.cpp       
 g2o/stuff/property.h       
 )
+
+target_include_directories(g2o PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

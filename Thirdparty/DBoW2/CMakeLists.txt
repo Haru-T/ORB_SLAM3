@@ -41,5 +41,6 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 
 include_directories(${OpenCV_INCLUDE_DIRS})
 add_library(DBoW2 SHARED ${SRCS_DBOW2} ${SRCS_DUTILS})
+target_include_directories(DBoW2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(DBoW2 ${OpenCV_LIBS})
 

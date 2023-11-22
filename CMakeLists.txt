@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.14)
 project(ORB_SLAM3)
 
 IF(NOT CMAKE_BUILD_TYPE)
@@ -39,17 +39,9 @@ MESSAGE("OPENCV VERSION:")
 MESSAGE(${OpenCV_VERSION})
 
 find_package(Eigen3 3.1.0 REQUIRED)
-find_package(Pangolin REQUIRED)
 find_package(realsense2)
-
-include_directories(
-${PROJECT_SOURCE_DIR}
-${PROJECT_SOURCE_DIR}/include
-${PROJECT_SOURCE_DIR}/include/CameraModels
-${PROJECT_SOURCE_DIR}/Thirdparty/Sophus
-${EIGEN3_INCLUDE_DIR}
-${Pangolin_INCLUDE_DIRS}
-)
+find_package(Boost REQUIRED COMPONENTS serialization)
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
 
@@ -81,53 +73,42 @@ src/MLPnPsolver.cpp
 src/GeometricTools.cc
 src/TwoViewReconstruction.cc
 src/Config.cc
-src/Settings.cc
-include/System.h
-include/Tracking.h
-include/LocalMapping.h
-include/LoopClosing.h
-include/ORBextractor.h
-include/ORBmatcher.h
-include/FrameDrawer.h
-include/Converter.h
-include/MapPoint.h
-include/KeyFrame.h
-include/Atlas.h
-include/Map.h
-include/MapDrawer.h
-include/Optimizer.h
-include/Frame.h
-include/KeyFrameDatabase.h
-include/Sim3Solver.h
-include/Viewer.h
-include/ImuTypes.h
-include/G2oTypes.h
-include/CameraModels/GeometricCamera.h
-include/CameraModels/Pinhole.h
-include/CameraModels/KannalaBrandt8.h
-include/OptimizableTypes.h
-include/MLPnPsolver.h
-include/GeometricTools.h
-include/TwoViewReconstruction.h
-include/SerializationUtils.h
-include/Config.h
-include/Settings.h)
+src/Settings.cc)
+target_include_directories(${PROJECT_NAME}
+PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+PRIVATE ${OpenCV_INCLUDE_DIRS})
 
 add_subdirectory(Thirdparty/g2o)
+add_subdirectory(Thirdparty/DBoW2)
+add_subdirectory(Thirdparty/Sophus)
 
+target_link_directories(${PROJECT_NAME}
+PRIVATE ${OpenCV_LINK_DIRECTORIES})
 target_link_libraries(${PROJECT_NAME}
-${OpenCV_LIBS}
-${EIGEN3_LIBS}
-${Pangolin_LIBRARIES}
-${PROJECT_SOURCE_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
-${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
--lboost_serialization
--lcrypto
-)
+${OpenCV_LIBRARIES}
+Eigen3::Eigen
+DBoW2
+g2o
+sophus
+Boost::serialization
+OpenSSL::Crypto)
+
+find_package(Pangolin QUIET)
+if(Pangolin_FOUND)
+  target_link_libraries(${PROJECT_NAME} Pangolin)
+else()
+  include(FetchContent)
+  FetchContent_Declare(
+  Pangolin
+  GIT_REPOSITORY https://github.com/stevenlovegrove/Pangolin.git
+  GIT_TAG v0.6)
+  FetchContent_MakeAvailable(Pangolin)
+  target_link_libraries(${PROJECT_NAME} pangolin)
+endif()
 
 # If RealSense SDK is found the library is added and its examples compiled
 if(realsense2_FOUND)
-    include_directories(${PROJECT_NAME}
+    target_include_directories(${PROJECT_NAME}
     ${realsense_INCLUDE_DIR}
     )
     target_link_libraries(${PROJECT_NAME}
