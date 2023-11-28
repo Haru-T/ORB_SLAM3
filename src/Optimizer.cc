@@ -2831,11 +2831,18 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
         }
     }
 
-    //cout << "Total map points: " << lLocalMapPoints.size() << endl;
-    for(map<int,int>::iterator mit=mVisEdges.begin(), mend=mVisEdges.end(); mit!=mend; mit++)
+    for(map<int,int>::iterator mit=mVisEdges.begin(); mit!=mVisEdges.end();)
     {
-        assert(mit->second>=3);
+        if(mit->second < 3)
+        {
+            mit = mVisEdges.erase(mit);
+        }
+        else
+        {
+            ++mit;
+        }
     }
+    //cout << "Total map points: " << lLocalMapPoints.size() << endl;
 
     optimizer.initializeOptimization();
     optimizer.computeActiveErrors();
