@@ -1,0 +1,37 @@
+# syntax=docker.io/docker/dockerfile:1
+
+FROM docker.io/library/ubuntu:22.04 AS pangolin-builder
+ARG PANGOLIN_TAG=v0.6
+
+ARG DEBIAN_FRONTEND=noninteractive
+ADD https://github.com/stevenlovegrove/Pangolin.git#${PANGOLIN_TAG} /Pangolin
+WORKDIR /Pangolin
+RUN apt-get update \
+&& apt-get install -y --no-install-recommends \
+libgl1-mesa-dev libwayland-dev libxkbcommon-dev wayland-protocols libegl1-mesa-dev \
+libc++-dev libglew-dev libeigen3-dev cmake g++ ninja-build libjpeg-dev libpng-dev \
+libavcodec-dev libavutil-dev libavformat-dev libswscale-dev libavdevice-dev \
+libpython2.7-dev libpython3.10-dev python3.10-distutils python2.7 python3.10 \
+&& cmake -Bbuild -GNinja -H. && cmake --build build
+
+FROM docker.io/library/ubuntu:22.04
+ARG USERNAME=dev
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+&& apt-get install -y --no-install-recommends \
+libgl1-mesa-dev libwayland-dev libxkbcommon-dev wayland-protocols libegl1-mesa-dev \
+libc++-dev libglew-dev libeigen3-dev cmake g++ ninja-build libjpeg-dev libpng-dev \
+libavcodec-dev libavutil-dev libavformat-dev libswscale-dev libavdevice-dev \
+libpython2.7-dev libpython3.10-dev python3.10-distutils python2.7 python3.10 \
+libopencv-dev libpcl-dev sudo clangd gdb
+RUN --mount=type=bind,from=pangolin-builder,source=/Pangolin,target=/Pangolin,rw \
+cd  /Pangolin/build && ninja install
+RUN groupadd --gid ${USER_GID} ${USERNAME} \
+&& useradd -s /usr/bin/bash --uid ${USER_UID} --gid ${USERNAME} -m ${USERNAME} \
+&& echo "${USERNAME} ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME} \
+&& chmod 0440 /etc/sudoers.d/${USERNAME}
+
+USER ${USERNAME}

@@ -1,0 +1,15 @@
+{
+  "name": "ORB_SLAM3",
+  "build": {
+    "dockerfile": "Containerfile"
+  },
+  "containerEnv": {
+    "DISPLAY": "${localEnv:DISPLAY}"
+  },
+  "capAdd": ["SYS_PTRACE"],
+  "securityOpt": ["seccomp=unconfined"],
+  "mounts": [
+    { "source": "/tmp/.X11-unix", "target": "/tmp/.X11-unix", "type": "bind" }
+  ],
+  "runArgs": ["--gpus=all"]
+}
