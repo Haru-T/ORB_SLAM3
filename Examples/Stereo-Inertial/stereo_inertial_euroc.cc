@@ -21,10 +21,16 @@
 #include<fstream>
 #include<iomanip>
 #include<chrono>
+#include <cstdint>
 #include <ctime>
 #include <sstream>
 
 #include <opencv2/core/core.hpp>
+#include <opencv2/features2d.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 
 
 #include<System.h>
@@ -34,22 +40,22 @@
 using namespace std;
 
 void LoadImages(const string &strPathLeft, const string &strPathRight, const string &strPathTimes,
-                vector<string> &vstrImageLeft, vector<string> &vstrImageRight, vector<double> &vTimeStamps);
+                vector<string> &vstrImageLeft, vector<string> &vstrImageRight, vector<int64_t> &vTimeStamps);
 
 void LoadIMU(const string &strImuPath, vector<double> &vTimeStamps, vector<cv::Point3f> &vAcc, vector<cv::Point3f> &vGyro);
 
 
 int main(int argc, char **argv)
 {
-    if(argc < 5)
+    if(argc < 6)
     {
-        cerr << endl << "Usage: ./stereo_inertial_euroc path_to_vocabulary path_to_settings path_to_sequence_folder_1 path_to_times_file_1 (path_to_image_folder_2 path_to_times_file_2 ... path_to_image_folder_N path_to_times_file_N) " << endl;
+        cerr << endl << "Usage: ./stereo_inertial_euroc path_to_vocabulary path_to_settings path_to_save_points path_to_sequence_folder_1 path_to_times_file_1 (path_to_image_folder_2 path_to_times_file_2 ... path_to_image_folder_N path_to_times_file_N) " << endl;
         return 1;
     }
 
-    const int num_seq = (argc-3)/2;
+    const int num_seq = (argc-4)/2;
     cout << "num_seq = " << num_seq << endl;
-    bool bFileName= (((argc-3) % 2) == 1);
+    bool bFileName= (((argc-4) % 2) == 1);
     string file_name;
     if (bFileName)
     {
@@ -61,7 +67,7 @@ int main(int argc, char **argv)
     int seq;
     vector< vector<string> > vstrImageLeft;
     vector< vector<string> > vstrImageRight;
-    vector< vector<double> > vTimestampsCam;
+    vector< vector<int64_t> > vTimestampsCamInt;
     vector< vector<cv::Point3f> > vAcc, vGyro;
     vector< vector<double> > vTimestampsImu;
     vector<int> nImages;
@@ -89,7 +95,7 @@ int main(int argc, char **argv)
         string pathCam1 = pathSeq + "/mav0/cam1/data";
         string pathImu = pathSeq + "/mav0/imu0/data.csv";
 
-        LoadImages(pathCam0, pathCam1, pathTimeStamps, vstrImageLeft[seq], vstrImageRight[seq], vTimestampsCam[seq]);
+        LoadImages(pathCam0, pathCam1, pathTimeStamps, vstrImageLeft[seq], vstrImageRight[seq], vTimestampsCamInt[seq]);
         cout << "LOADED!" << endl;
 
         cout << "Loading IMU for sequence " << seq << "...";
@@ -108,7 +114,7 @@ int main(int argc, char **argv)
 
         // Find first imu to be considered, supposing imu measurements start first
 
-        while(vTimestampsImu[seq][first_imu[seq]]<=vTimestampsCam[seq][0])
+        while(vTimestampsImu[seq][first_imu[seq]]<=vTimestampsCam[seq][0]*1e-9)
             first_imu[seq]++;
         first_imu[seq]--; // first imu measurement to be considered
     }
@@ -161,13 +167,13 @@ int main(int argc, char **argv)
                 return 1;
             }
 
-            double tframe = vTimestampsCam[seq][ni];
+            double tframe = vTimestampsCamInt[seq][ni] * 1e-9;
 
             // Load imu measurements from previous frame
             vImuMeas.clear();
 
             if(ni>0)
-                while(vTimestampsImu[seq][first_imu[seq]]<=vTimestampsCam[seq][ni]) // while(vTimestampsImu[first_imu]<=vTimestampsCam[ni])
+                while(vTimestampsImu[seq][first_imu[seq]]<=vTimestampsCamInt[seq][ni]*1e-9) // while(vTimestampsImu[first_imu]<=vTimestampsCam[ni])
                 {
                     vImuMeas.push_back(ORB_SLAM3::IMU::Point(vAcc[seq][first_imu[seq]].x,vAcc[seq][first_imu[seq]].y,vAcc[seq][first_imu[seq]].z,
                                                              vGyro[seq][first_imu[seq]].x,vGyro[seq][first_imu[seq]].y,vGyro[seq][first_imu[seq]].z,
@@ -198,6 +204,45 @@ int main(int argc, char **argv)
             double ttrack= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
 
             vTimesTrack[ni]=ttrack;
+            Sophus::SE3f Tcw = SLAM.TrackStereo(imLeft, imRight, tframe, vImuMeas);
+            std::vector<ORB_SLAM3::MapPoint *> mapPoints = SLAM.GetTrackedMapPoints();
+            std::vector<cv::KeyPoint> keyPoints = SLAM.GetTrackedKeyPointsUn();
+            auto new_end_m = mapPoints.end();
+            auto new_end_k = keyPoints.end();
+            for (int i = keyPoints.size() - 1; i >= 0; --i)
+            {
+                if (mapPoints[i] == nullptr)
+                {
+                    --new_end_m;
+                    --new_end_k;
+                    std::swap(mapPoints[i], *new_end_m);
+                    std::swap(keyPoints[i], *new_end_k);
+                }
+            }
+            mapPoints.erase(new_end_m, mapPoints.end());
+            keyPoints.erase(new_end_k, keyPoints.end());
+            size_t nValidPoints =
+                mapPoints.size() -
+                std::count(mapPoints.begin(), mapPoints.end(), nullptr);
+            if (nValidPoints > 0) {
+                std::snprintf(buf, sizeof(buf), "%s/%" PRIi64 ".pcd", argv[3],
+                              vTimestampsCamInt[seq][ni]);
+                pcl::PointCloud<pcl::PointXYZI> cloud;
+                size_t cloud_index = 0;
+                for (size_t i = 0; i < mapPoints.size(); ++i)
+                {
+                    if (mapPoints[i] == nullptr)
+                    {
+                        continue;
+                    }
+                    Eigen::Vector3f pt = Tcw * mapPoints[i]->GetWorldPos();
+                    const cv::KeyPoint &kp = keyPoints[i];
+                    int u = static_cast<int>(kp.pt.x), v = static_cast<int>(kp.pt.y);
+                    float intensity = imLeft.at<unsigned char>(v, u);
+                    cloud.push_back(pcl::PointXYZI(pt.x(), pt.y(), pt.z(), intensity));
+                }
+                pcl::io::savePCDFileBinary(buf, cloud);
+            }
 
             // Wait to load the next frame
             double T=0;
@@ -241,7 +286,7 @@ int main(int argc, char **argv)
 }
 
 void LoadImages(const string &strPathLeft, const string &strPathRight, const string &strPathTimes,
-                vector<string> &vstrImageLeft, vector<string> &vstrImageRight, vector<double> &vTimeStamps)
+                vector<string> &vstrImageLeft, vector<string> &vstrImageRight, vector<int64_t> &vTimeStamps)
 {
     ifstream fTimes;
     fTimes.open(strPathTimes.c_str());
@@ -258,9 +303,9 @@ void LoadImages(const string &strPathLeft, const string &strPathRight, const str
             ss << s;
             vstrImageLeft.push_back(strPathLeft + "/" + ss.str() + ".png");
             vstrImageRight.push_back(strPathRight + "/" + ss.str() + ".png");
-            double t;
+            int64_t t;
             ss >> t;
-            vTimeStamps.push_back(t/1e9);
+            vTimeStamps.push_back(t);
 
         }
     }
