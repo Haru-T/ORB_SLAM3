@@ -224,6 +224,7 @@ int main(int argc, char **argv)
             size_t nValidPoints =
                 mapPoints.size() -
                 std::count(mapPoints.begin(), mapPoints.end(), nullptr);
+            char buf[256];
             if (nValidPoints > 0) {
                 std::snprintf(buf, sizeof(buf), "%s/%" PRIi64 ".pcd", argv[3],
                               vTimestampsCamInt[seq][ni]);
